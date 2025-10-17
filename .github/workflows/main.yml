@@ -57,21 +57,22 @@ jobs:
         with:
           version: 8
 
-      - name: Setup Node.js
+      - name: Setup Node.js without cache
         if: steps.check-commands.outputs.init_command == 'true' || steps.check-commands.outputs.build_command == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: 'pnpm'
-          cache-dependency-path: '**/pnpm-lock.yaml'
+          # Remove cache to avoid errors when lock file doesn't exist
 
-      - name: Create package.json if missing
-        if: steps.check-commands.outputs.init_command == 'true' && !contains(steps.check-commands.outputs.build_command, 'true')
+      - name: Create basic package structure for init
+        if: steps.check-commands.outputs.init_command == 'true'
         run: |
+          # Create package.json if it doesn't exist
           if [ ! -f "package.json" ]; then
             echo "Creating package.json..."
-            echo '{
-              "name": "'${{ env.TAURI_APP_NAME }}'",
+            cat > package.json << EOF
+            {
+              "name": "${{ env.TAURI_APP_NAME }}",
               "version": "1.0.0",
               "type": "module",
               "scripts": {
@@ -80,9 +81,14 @@ jobs:
               },
               "dependencies": {},
               "devDependencies": {}
-            }' > package.json
-          else
-            echo "package.json already exists"
+            }
+            EOF
+          fi
+          
+          # Create initial pnpm-lock.yaml if it doesn't exist
+          if [ ! -f "pnpm-lock.yaml" ]; then
+            echo "Creating initial pnpm-lock.yaml..."
+            pnpm install --lockfile-only
           fi
 
       - name: Initialize Tauri (for /init command)
@@ -98,12 +104,6 @@ jobs:
             exit 0
           fi
           
-          # Create pnpm-lock.yaml if it doesn't exist by installing dependencies
-          if [ ! -f "pnpm-lock.yaml" ]; then
-            echo "Creating pnpm-lock.yaml..."
-            pnpm install
-          fi
-          
           # Initialize Tauri with interactive mode disabled
           echo "Initializing Tauri..."
           pnpm tauri init \
@@ -116,7 +116,7 @@ jobs:
           # Add tauri as dev dependency
           pnpm add -D @tauri-apps/cli @tauri-apps/api
           
-          # Install dependencies to generate lock file
+          # Update lock file
           pnpm install
           
           echo "Tauri initialization completed successfully"
@@ -127,16 +127,22 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add .
-          git diff --staged --quiet || git commit -m "Initialize Tauri app"
-          git push
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Initialize Tauri app"
+            git push
+          fi
 
       - name: Setup for build
         if: steps.check-commands.outputs.build_command == 'true'
         run: |
           # Create package.json if it doesn't exist
           if [ ! -f "package.json" ]; then
-            echo '{
-              "name": "'${{ env.TAURI_APP_NAME }}'",
+            echo "Creating package.json for build..."
+            cat > package.json << EOF
+            {
+              "name": "${{ env.TAURI_APP_NAME }}",
               "version": "1.0.0",
               "type": "module",
               "scripts": {
@@ -145,10 +151,17 @@ jobs:
               },
               "dependencies": {},
               "devDependencies": {}
-            }' > package.json
+            }
+            EOF
           fi
           
-          # Install dependencies and generate lock file
+          # Create pnpm-lock.yaml if it doesn't exist
+          if [ ! -f "pnpm-lock.yaml" ]; then
+            echo "Creating pnpm-lock.yaml for build..."
+            pnpm install --lockfile-only
+          fi
+          
+          # Install dependencies
           pnpm install
           pnpm add -g @tauri-apps/cli
           pnpm add -D @tauri-apps/cli @tauri-apps/api
@@ -159,18 +172,28 @@ jobs:
           # Install Rust
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           source ~/.cargo/env
+          echo "Rust installed successfully"
           
           # Install required targets
           rustup target add x86_64-pc-windows-gnu
           rustup target add x86_64-apple-darwin
           rustup target add x86_64-unknown-linux-gnu
+          echo "Rust targets added"
 
       - name: Build Tauri app
         if: steps.check-commands.outputs.build_command == 'true'
         run: |
           source ~/.cargo/env
           echo "Building Tauri app..."
+          
+          # Check if Tauri is initialized
+          if [ ! -d "src-tauri" ]; then
+            echo "Tauri not initialized. Please run /init first."
+            exit 1
+          fi
+          
           pnpm tauri build
+          echo "Build completed successfully"
 
       - name: Upload build artifacts
         if: steps.check-commands.outputs.build_command == 'true'
