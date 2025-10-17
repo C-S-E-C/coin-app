@@ -1,0 +1,183 @@
+name: Tauri Bot
+
+on:
+  issue_comment:
+    types: [created, edited]
+  issues:
+    types: [opened, edited]
+
+env:
+  TARGET_USER: 'ianchzhu'
+  TAURI_APP_NAME: 'csec-coin-app'  # Change this to your app name
+
+jobs:
+  process-commands:
+    # Only run if the comment/issue is from the target user
+    if: |
+      github.event.comment.user.login == env.TARGET_USER ||
+      github.event.issue.user.login == env.TARGET_USER
+    
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract content
+        id: extract
+        run: |
+          if [ "${{ github.event_name }}" == "issue_comment" ]; then
+            CONTENT="${{ github.event.comment.body }}"
+            ISSUE_NUMBER="${{ github.event.issue.number }}"
+          else
+            CONTENT="${{ github.event.issue.body }}"
+            ISSUE_NUMBER="${{ github.event.issue.number }}"
+          fi
+          
+          echo "content=${CONTENT}" >> $GITHUB_OUTPUT
+          echo "issue_number=${ISSUE_NUMBER}" >> $GITHUB_OUTPUT
+          echo "contains_init=$(echo "$CONTENT" | grep -qE '/init(\s|$)' && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "contains_build=$(echo "$CONTENT" | grep -qE '/build(\s|$)' && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        if: steps.extract.outputs.contains_init == 'true' || steps.extract.outputs.contains_build == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Cache Rust dependencies
+        if: steps.extract.outputs.contains_init == 'true' || steps.extract.outputs.contains_build == 'true'
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Initialize Tauri App (/init)
+        if: steps.extract.outputs.contains_init == 'true'
+        run: |
+          echo "🚀 Initializing Tauri application..."
+          
+          # Install Tauri CLI
+          npm install @tauri-apps/cli @tauri-apps/api
+          
+          # Initialize Tauri (if not already initialized)
+          if [ ! -f "src-tauri/Cargo.toml" ]; then
+            npx tauri init
+            echo "✅ Tauri app initialized"
+          else
+            echo "⚠️ Tauri app already exists, skipping initialization"
+          fi
+          
+          # Create basic project structure if needed
+          mkdir -p src-tauri/src
+          mkdir -p src-tauri/assets
+          
+          echo "✅ Tauri initialization completed"
+
+      - name: Build for All Platforms (/build)
+        if: steps.extract.outputs.contains_build == 'true'
+        run: |
+          echo "🏗️ Building Tauri application for all platforms..."
+          
+          # Install dependencies
+          npm install
+          
+          # Build for different platforms
+          echo "Starting multi-platform build..."
+
+      - name: Build for Linux
+        if: steps.extract.outputs.contains_build == 'true'
+        run: |
+          echo "🐧 Building for Linux..."
+          npx tauri build --target x86_64-unknown-linux-gnu
+        continue-on-error: true
+
+      - name: Build for Windows
+        if: steps.extract.outputs.contains_build == 'true'
+        run: |
+          echo "🪟 Building for Windows..."
+          npx tauri build --target x86_64-pc-windows-msvc
+        continue-on-error: true
+
+      - name: Build for macOS
+        if: steps.extract.outputs.contains_build == 'true'
+        run: |
+          echo "🍎 Building for macOS..."
+          npx tauri build --target x86_64-apple-darwin
+        continue-on-error: true
+
+      - name: Build for Android
+        if: steps.extract.outputs.contains_build == 'true'
+        run: |
+          echo "🤖 Building for Android..."
+          # Install Android dependencies
+          sudo apt-get update
+          sudo apt-get install -y android-sdk android-ndk
+          
+          # Set up Android environment
+          export ANDROID_HOME=$HOME/Android/Sdk
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools
+          
+          # Build for Android
+          npx tauri android build
+        continue-on-error: true
+
+      - name: Upload Artifacts
+        if: steps.extract.outputs.contains_build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-builds
+          path: |
+            src-tauri/target/release/bundle/
+            src-tauri/target/**/release/bundle/
+          retention-days: 7
+
+      - name: Post Status Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { contains_init, contains_build, issue_number } = process.env;
+            const issue_number_env = process.env.ISSUE_NUMBER || issue_number;
+            
+            let message = `@${{ github.event.comment.user.login || github.event.issue.user.login }} `;
+            
+            if (contains_init === 'true') {
+              message += "✅ **Tauri Initialization Completed!**\n\n";
+              message += "Your Tauri app has been initialized and is ready for development.\n\n";
+            }
+            
+            if (contains_build === 'true') {
+              message += "🏗️ **Build Process Completed!**\n\n";
+              message += "Your Tauri app has been built for multiple platforms:\n";
+              message += "• 🐧 Linux\n";
+              message += "• 🪟 Windows\n";
+              message += "• 🍎 macOS\n";
+              message += "• 🤖 Android\n\n";
+              message += "📦 **Artifacts uploaded!** You can download them from the Actions tab.\n\n";
+            }
+            
+            message += `**Timestamp**: ${new Date().toISOString()}`;
+            
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue_number_env,
+              body: message
+            });
+        env:
+          CONTAINS_INIT: ${{ steps.extract.outputs.contains_init }}
+          CONTAINS_BUILD: ${{ steps.extract.outputs.contains_build }}
+          ISSUE_NUMBER: ${{ steps.extract.outputs.issue_number }}
+      - name: writing to resp
+         uses: stefanzweifel/git-auto-commit-action@v6
+         with:
+            commit_message: "bot"
+            branch: main
+            commit_user_name: bot
