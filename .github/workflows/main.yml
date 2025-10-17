@@ -14,8 +14,8 @@ jobs:
   process-commands:
     # Only run if the comment/issue is from the target user
     if: |
-      github.event.comment.user.login == env.TARGET_USER ||
-      github.event.issue.user.login == env.TARGET_USER
+      github.event.comment.user.login == "ianchzhu" ||
+      github.event.issue.user.login == "ianchzhu"
     
     runs-on: ubuntu-latest
     
