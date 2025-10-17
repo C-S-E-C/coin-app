@@ -62,7 +62,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          # Remove cache to avoid errors when lock file doesn't exist
 
       - name: Create basic package structure for init
         if: steps.check-commands.outputs.init_command == 'true'
@@ -70,19 +69,19 @@ jobs:
           # Create package.json if it doesn't exist
           if [ ! -f "package.json" ]; then
             echo "Creating package.json..."
-            cat > package.json << EOF
-            {
-              "name": "${{ env.TAURI_APP_NAME }}",
-              "version": "1.0.0",
-              "type": "module",
-              "scripts": {
-                "dev": "tauri dev",
-                "build": "tauri build"
-              },
-              "dependencies": {},
-              "devDependencies": {}
-            }
-            EOF
+            cat > package.json << 'EOF'
+{
+  "name": "${{ env.TAURI_APP_NAME }}",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
+EOF
           fi
           
           # Create initial pnpm-lock.yaml if it doesn't exist
@@ -140,19 +139,19 @@ jobs:
           # Create package.json if it doesn't exist
           if [ ! -f "package.json" ]; then
             echo "Creating package.json for build..."
-            cat > package.json << EOF
-            {
-              "name": "${{ env.TAURI_APP_NAME }}",
-              "version": "1.0.0",
-              "type": "module",
-              "scripts": {
-                "dev": "tauri dev",
-                "build": "tauri build"
-              },
-              "dependencies": {},
-              "devDependencies": {}
-            }
-            EOF
+            cat > package.json << 'EOF'
+{
+  "name": "${{ env.TAURI_APP_NAME }}",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
+EOF
           fi
           
           # Create pnpm-lock.yaml if it doesn't exist
