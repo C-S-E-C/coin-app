@@ -5,7 +5,9 @@ on:
     types: [created, edited]
   issues:
     types: [opened, edited]
-
+permissions:
+  issues: write
+  contents: write
 env:
   TARGET_USER: 'ianchzhu'
   TAURI_APP_NAME: 'csec-coin-app'  # Change this to your app name
