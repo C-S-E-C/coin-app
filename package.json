@@ -1,20 +1,15 @@
 {
-  "name": "csec-coin-app",
+  "name": "csec-coins-app",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
-    "build": "vite build",
-    "preview": "vite preview",
-    "tauri": "tauri",
-    "build:app": "tauri build"
+    "tauri": "tauri"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^1.5.0",
-    "vite": "^4.4.0"
+    "@tauri-apps/cli": "^2"
   },
   "dependencies": {
-    "@tauri-apps/api": "^1.5.0"
+    "rust-std": "^0.1.0"
   }
 }
