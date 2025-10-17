@@ -67,23 +67,6 @@ jobs:
         if: steps.check-commands.outputs.init_command == 'true'
         run: |
           # Create package.json if it doesn't exist
-          if [ ! -f "package.json" ]; then
-            echo "Creating package.json..."
-            cat > package.json << 'EOF'
-{
-  "name": "${{ env.TAURI_APP_NAME }}",
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "tauri dev",
-    "build": "tauri build"
-  },
-  "dependencies": {},
-  "devDependencies": {}
-}
-EOF
-          fi
-          
           # Create initial pnpm-lock.yaml if it doesn't exist
           if [ ! -f "pnpm-lock.yaml" ]; then
             echo "Creating initial pnpm-lock.yaml..."
