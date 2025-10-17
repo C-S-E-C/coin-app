@@ -5,232 +5,197 @@ on:
     types: [created, edited]
   issues:
     types: [opened, edited]
+
 permissions:
   issues: write
   contents: write
+  pull-requests: write
+
 env:
   TARGET_USER: 'ianchzhu'
-  TAURI_APP_NAME: 'csec-coin-app'  # Change this to your app name
+  TAURI_APP_NAME: 'csec-coin-app'
 
 jobs:
   process-commands:
     # Only run if the comment/issue is from the target user
     if: |
-      github.event.comment.user.login == 'ianchzhu' ||
-      github.event.issue.user.login == 'ianchzhu'
+      (github.event.comment && github.event.comment.user.login == env.TARGET_USER) ||
+      (github.event.issue.user.login == env.TARGET_USER)
     
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Extract content
-        id: extract
+      - name: Check for commands
+        id: check-commands
         run: |
-          if [ "${{ github.event_name }}" == "issue_comment" ]; then
-            CONTENT="${{ github.event.comment.body }}"
-            ISSUE_NUMBER="${{ github.event.issue.number }}"
+          COMMENT_BODY=""
+          if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
+            COMMENT_BODY="${{ github.event.comment.body }}"
           else
-            CONTENT="${{ github.event.issue.body }}"
-            ISSUE_NUMBER="${{ github.event.issue.number }}"
+            COMMENT_BODY="${{ github.event.issue.body }}"
           fi
           
-          echo "content=${CONTENT}" >> $GITHUB_OUTPUT
-          echo "issue_number=${ISSUE_NUMBER}" >> $GITHUB_OUTPUT
-          echo "contains_init=$(echo "$CONTENT" | grep -qE '/init(\s|$)' && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
-          echo "contains_build=$(echo "$CONTENT" | grep -qE '/build(\s|$)' && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "Comment body: $COMMENT_BODY"
+          
+          if echo "$COMMENT_BODY" | grep -q "/init"; then
+            echo "init_command=true" >> $GITHUB_OUTPUT
+            echo "Found /init command"
+          elif echo "$COMMENT_BODY" | grep -q "/build"; then
+            echo "build_command=true" >> $GITHUB_OUTPUT
+            echo "Found /build command"
+          else
+            echo "No valid command found"
+          fi
+
+      - name: Checkout code
+        if: steps.check-commands.outputs.init_command == 'true' || steps.check-commands.outputs.build_command == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        if: steps.check-commands.outputs.init_command == 'true' || steps.check-commands.outputs.build_command == 'true'
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
 
       - name: Setup Node.js
-        if: steps.extract.outputs.contains_init == 'true' || steps.extract.outputs.contains_build == 'true'
+        if: steps.check-commands.outputs.init_command == 'true' || steps.check-commands.outputs.build_command == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          # cache: 'npm'
+          cache: 'pnpm'
 
-      - name: Cache Rust dependencies
-        if: steps.extract.outputs.contains_init == 'true' || steps.extract.outputs.contains_build == 'true'
-        uses: actions/cache@v3
-        with:
-            path: |
-              ~/.cargo/registry
-              ~/.cargo/git
-              target
-            key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
-            restore-keys: |
-              ${{ runner.os }}-cargo-
-
-      - name: Initialize Tauri App (/init)
-        if: steps.extract.outputs.contains_init == 'true'
+      - name: Initialize Tauri (for /init command)
+        if: steps.check-commands.outputs.init_command == 'true'
         run: |
-          echo "🚀 Initializing Tauri application..."
+          # Install Tauri CLI and create Tauri app
+          pnpm add -g @tauri-apps/cli
           
-          # Install Tauri CLI
-          npm install @tauri-apps/cli @tauri-apps/api
-          
-          # Initialize Tauri (if not already initialized)
-          if [ ! -f "src-tauri/Cargo.toml" ]; then
-            npx tauri init
-            echo "✅ Tauri app initialized"
-          else
-            echo "⚠️ Tauri app already exists, skipping initialization"
+          # Check if Tauri is already initialized by looking for src-tauri directory
+          if [ -d "src-tauri" ]; then
+            echo "Tauri is already initialized"
+            echo "::warning::Tauri is already initialized in this repository"
+            exit 0
           fi
           
-          # Create basic project structure if needed
-          mkdir -p src-tauri/src
-          mkdir -p src-tauri/assets
+          # Initialize Tauri
+          pnpm tauri init \
+            --app-name "${{ env.TAURI_APP_NAME }}" \
+            --window-title "${{ env.TAURI_APP_NAME }}" \
+            --dist-dir "../dist" \
+            --dev-path "http://localhost:3000" \
+            --yes
           
-          echo "✅ Tauri initialization completed"
-      - name: Configure Tauri Bundle Identifier
-        if: steps.extract.outputs.contains_build == 'true'
-        run: |
-         echo "Configuring Tauri bundle identifier..."
-         UNIQUE_ID="com.${{ github.repository_owner }}.csec-coin-app"
-         if [ -f "src-tauri/tauri.conf.json" ]; then
-           jq --arg id "$UNIQUE_ID" '.tauri.bundle.identifier = $id' src-tauri/tauri.conf.json > temp.json && mv temp.json src-tauri/tauri.conf.json
-           echo "✅ Updated bundle identifier to: $UNIQUE_ID"
-         else
-           echo "❌ tauri.conf.json not found. Running tauri init first..."
-           npx tauri init
-           jq --arg id "$UNIQUE_ID" '.tauri.bundle.identifier = $id' src-tauri/tauri.conf.json > temp.json && mv temp.json src-tauri/tauri.conf.json
-           echo "✅ Created and updated bundle identifier to: $UNIQUE_ID"
-         fi
-         echo "Current bundle identifier:"
-         jq '.tauri.bundle.identifier' src-tauri/tauri.conf.json
-      - name: Build for All Platforms (/build)
-        if: steps.extract.outputs.contains_build == 'true'
-        run: |
-          echo "🏗️ Building Tauri application for all platforms..."
+          # Create basic package.json if it doesn't exist
+          if [ ! -f "package.json" ]; then
+            echo '{
+              "name": "'${{ env.TAURI_APP_NAME }}'",
+              "version": "1.0.0",
+              "type": "module",
+              "scripts": {
+                "dev": "tauri dev",
+                "build": "tauri build"
+              }
+            }' > package.json
+          fi
           
-          # Install dependencies
-          npm install
+          # Add tauri scripts to package.json if they don't exist
+          if [ -f "package.json" ]; then
+            npm pkg set scripts.tauri="tauri"
+            npm pkg set scripts.dev="tauri dev"
+            npm pkg set scripts.build="tauri build"
+          fi
           
-          # Build for different platforms
-          echo "Starting multi-platform build..."
+          # Commit and push the changes
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git commit -m "Initialize Tauri app"
+          git push
 
-      - name: Install System Dependencies
-        if: steps.extract.outputs.contains_build == 'true'
+      - name: Build Tauri for all platforms (for /build command)
+        if: steps.check-commands.outputs.build_command == 'true'
         run: |
-         echo "Installing system dependencies for Tauri..."
-         if [ "$RUNNER_OS" == "Linux" ]; then
-           echo "Installing Linux dependencies..."
-           sudo apt-get update
-           sudo apt-get install -y \
-             libwebkit2gtk-4.0-dev \
-             build-essential \
-             curl \
-             wget \
-             file \
-             libxdo-dev \
-             libssl-dev \
-             libayatana-appindicator3-dev \
-             librsvg2-dev \
-             libgtk-3-dev \
-             libglib2.0-dev \
-             pkg-config
-           echo "✅ Linux dependencies installed"
-         elif [ "$RUNNER_OS" == "macOS" ]; then
-           echo "Installing macOS dependencies..."
-           brew update
-           brew install webkit2gtk
-           echo "✅ macOS dependencies installed"
-         fi
-      - name: Setup Rust Targets
-        if: steps.extract.outputs.contains_build == 'true'
-        run: |
-         echo "Setting up Rust targets..."
-         rustup target add x86_64-unknown-linux-gnu
-         rustup target add x86_64-pc-windows-msvc
-         rustup target add x86_64-apple-darwin
-         echo "✅ Rust targets installed"
-
-      - name: Build for Linux
-        if: steps.extract.outputs.contains_build == 'true'
-        run: |
-         echo "🐧 Building for Linux..."
-         npx tauri build --target x86_64-unknown-linux-gnu
-        continue-on-error: true
-
-      - name: Build for Windows
-        if: steps.extract.outputs.contains_build == 'true'
-        run: |
-          echo "🪟 Building for Windows..."
-          npx tauri build --target x86_64-pc-windows-msvc
-        continue-on-error: true
-
-      - name: Build for macOS
-        if: steps.extract.outputs.contains_build == 'true'
-        run: |
-          echo "🍎 Building for macOS..."
-          npx tauri build --target x86_64-apple-darwin
-        continue-on-error: true
-
-      - name: Build for Android
-        if: steps.extract.outputs.contains_build == 'true'
-        run: |
-          echo "🤖 Building for Android..."
-          # Install Android dependencies
-          sudo apt-get update
-          sudo apt-get install -y android-sdk android-ndk
+          # Install dependencies and build
+          pnpm install
+          pnpm add -g @tauri-apps/cli
           
-          # Set up Android environment
-          export ANDROID_HOME=$HOME/Android/Sdk
-          export ANDROID_SDK_ROOT=$ANDROID_HOME
-          export PATH=$PATH:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools
+          # Install Rust and required targets
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          source ~/.cargo/env
           
-          # Build for Android
-          npx tauri android build
-        continue-on-error: true
+          # Install required targets for cross-compilation
+          rustup target add x86_64-pc-windows-gnu
+          rustup target add x86_64-apple-darwin
+          rustup target add aarch64-apple-darwin
+          rustup target add x86_64-unknown-linux-gnu
+          
+          # For Android build
+          rustup target add aarch64-linux-android
+          rustup target add armv7-linux-androideabi
+          rustup target add i686-linux-android
+          rustup target add x86_64-linux-android
+          
+          # Create build matrix and build for each platform
+          # Note: Building for all platforms requires proper setup and might need separate runners
+          # This is a simplified version that will attempt to build for current platform
+          
+          echo "Building Tauri app..."
+          pnpm tauri build
+          
+          # The actual multi-platform build would require:
+          # - macOS runner for macOS builds
+          # - Windows runner for Windows builds  
+          # - Special setup for Android builds
 
-      - name: Upload Artifacts
-        if: steps.extract.outputs.contains_build == 'true'
+      - name: Upload artifacts (for /build command)
+        if: steps.check-commands.outputs.build_command == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-builds
-          path: |
-            src-tauri/target/release/bundle/
-            src-tauri/target/**/release/bundle/
+          name: tauri-build-output
+          path: src-tauri/target/release/bundle/
           retention-days: 7
 
-      - name: Post Status Comment
+      - name: Post comment response
+        if: steps.check-commands.outputs.init_command == 'true' || steps.check-commands.outputs.build_command == 'true'
         uses: actions/github-script@v7
         with:
           script: |
-            const { contains_init, contains_build, issue_number } = process.env;
-            const issue_number_env = process.env.ISSUE_NUMBER || issue_number;
+            const { issue, comment } = context.payload;
+            const issueNumber = issue?.number || comment?.issue?.number;
             
-            let message = `@${{ github.event.comment.user.login || github.event.issue.user.login }} `;
-            
-            if (contains_init === 'true') {
-              message += "✅ **Tauri Initialization Completed!**\n\n";
-              message += "Your Tauri app has been initialized and is ready for development.\n\n";
+            let message = '';
+            if ('${{ steps.check-commands.outputs.init_command }}' === 'true') {
+              message = '🚀 Tauri initialization completed! The Tauri app structure has been set up.';
+            } else if ('${{ steps.check-commands.outputs.build_command }}' === 'true') {
+              message = '🔨 Build completed! The Tauri app has been built. Check the artifacts for the output.';
             }
             
-            if (contains_build === 'true') {
-              message += "🏗️ **Build Process Completed!**\n\n";
-              message += "Your Tauri app has been built for multiple platforms:\n";
-              message += "• 🐧 Linux\n";
-              message += "• 🪟 Windows\n";
-              message += "• 🍎 macOS\n";
-              message += "• 🤖 Android\n\n";
-              message += "📦 **Artifacts uploaded!** You can download them from the Actions tab.\n\n";
+            if (message) {
+              github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body: message
+              });
             }
-            
-            message += `**Timestamp**: ${new Date().toISOString()}`;
+
+      - name: Handle invalid command
+        if: steps.check-commands.outputs.init_command != 'true' && steps.check-commands.outputs.build_command != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { issue, comment } = context.payload;
+            const issueNumber = issue?.number || comment?.issue?.number;
             
             github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: issue_number_env,
-              body: message
+              issue_number: issueNumber,
+              body: '❌ No valid command found. Available commands: `/init`, `/build`'
             });
-        env:
-          CONTAINS_INIT: ${{ steps.extract.outputs.contains_init }}
-          CONTAINS_BUILD: ${{ steps.extract.outputs.contains_build }}
-          ISSUE_NUMBER: ${{ steps.extract.outputs.issue_number }}
-      - name: writing to resp
+      - name: commit to repo
         uses: stefanzweifel/git-auto-commit-action@v6
         with:
-            commit_message: "bot"
-            branch: main
-            commit_user_name: bot
+          commit_message: "TAURI"
+          branch: main
+          commit_user_name: TAURI-BOT
