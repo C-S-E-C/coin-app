@@ -176,8 +176,8 @@ jobs:
           CONTAINS_BUILD: ${{ steps.extract.outputs.contains_build }}
           ISSUE_NUMBER: ${{ steps.extract.outputs.issue_number }}
       - name: writing to resp
-         uses: stefanzweifel/git-auto-commit-action@v6
-         with:
+        uses: stefanzweifel/git-auto-commit-action@v6
+        with:
             commit_message: "bot"
             branch: main
             commit_user_name: bot
