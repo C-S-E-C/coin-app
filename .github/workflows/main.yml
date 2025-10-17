@@ -76,29 +76,23 @@ jobs:
       - name: Initialize Tauri (for /init command)
         if: steps.check-commands.outputs.init_command == 'true'
         run: |
-          # Install Tauri CLI
           pnpm add -g @tauri-apps/cli
-          
-          # Check if Tauri is already initialized by looking for src-tauri directory
           if [ -d "src-tauri" ]; then
             echo "Tauri is already initialized"
             echo "::warning::Tauri is already initialized in this repository"
             exit 0
           fi
-          
-          # Initialize Tauri with interactive mode disabled
-          echo "Initializing Tauri..."
-          pnpm tauri init \
-            --app-name "${{ env.TAURI_APP_NAME }}" \
-            --window-title "${{ env.TAURI_APP_NAME }}" \
-          
-          # Add tauri as dev dependency
-          pnpm add -D @tauri-apps/cli @tauri-apps/api
-          
-          # Update lock file
-          pnpm install
-          
-          echo "Tauri initialization completed successfully"
+         APP_ID="com.${{ github.repository_owner }}.${{ env.TAURI_APP_NAME }}"
+         APP_ID=$(echo "$APP_ID" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:].')
+         echo "Initializing Tauri with bundle identifier: $APP_ID"
+         pnpm tauri init \
+           --app-name "${{ env.TAURI_APP_NAME }}" \
+           --window-title "${{ env.TAURI_APP_NAME }}" \
+           --bundle-identifier "$APP_ID"
+         pnpm add -D @tauri-apps/cli@latest @tauri-apps/api@latest
+         pnpm add tauri-plugin-log@latest
+         pnpm install
+         echo "Tauri initialization completed successfully"
 
       - name: Commit Tauri initialization
         if: steps.check-commands.outputs.init_command == 'true'
