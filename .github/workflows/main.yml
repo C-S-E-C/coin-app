@@ -116,38 +116,6 @@ jobs:
             git push
           fi
 
-      - name: Setup for build
-        if: steps.check-commands.outputs.build_command == 'true'
-        run: |
-          # Create package.json if it doesn't exist
-          if [ ! -f "package.json" ]; then
-            echo "Creating package.json for build..."
-            cat > package.json << 'EOF'
-{
-  "name": "${{ env.TAURI_APP_NAME }}",
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "tauri dev",
-    "build": "tauri build"
-  },
-  "dependencies": {},
-  "devDependencies": {}
-}
-EOF
-          fi
-          
-          # Create pnpm-lock.yaml if it doesn't exist
-          if [ ! -f "pnpm-lock.yaml" ]; then
-            echo "Creating pnpm-lock.yaml for build..."
-            pnpm install --lockfile-only
-          fi
-          
-          # Install dependencies
-          pnpm install
-          pnpm add -g @tauri-apps/cli
-          pnpm add -D @tauri-apps/cli @tauri-apps/api
-
       - name: Setup Rust for build
         if: steps.check-commands.outputs.build_command == 'true'
         run: |
