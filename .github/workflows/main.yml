@@ -63,11 +63,32 @@ jobs:
         with:
           node-version: '18'
           cache: 'pnpm'
+          cache-dependency-path: '**/pnpm-lock.yaml'
+
+      - name: Create package.json if missing
+        if: steps.check-commands.outputs.init_command == 'true' && !contains(steps.check-commands.outputs.build_command, 'true')
+        run: |
+          if [ ! -f "package.json" ]; then
+            echo "Creating package.json..."
+            echo '{
+              "name": "'${{ env.TAURI_APP_NAME }}'",
+              "version": "1.0.0",
+              "type": "module",
+              "scripts": {
+                "dev": "tauri dev",
+                "build": "tauri build"
+              },
+              "dependencies": {},
+              "devDependencies": {}
+            }' > package.json
+          else
+            echo "package.json already exists"
+          fi
 
       - name: Initialize Tauri (for /init command)
         if: steps.check-commands.outputs.init_command == 'true'
         run: |
-          # Install Tauri CLI and create Tauri app
+          # Install Tauri CLI
           pnpm add -g @tauri-apps/cli
           
           # Check if Tauri is already initialized by looking for src-tauri directory
@@ -77,7 +98,14 @@ jobs:
             exit 0
           fi
           
-          # Initialize Tauri
+          # Create pnpm-lock.yaml if it doesn't exist by installing dependencies
+          if [ ! -f "pnpm-lock.yaml" ]; then
+            echo "Creating pnpm-lock.yaml..."
+            pnpm install
+          fi
+          
+          # Initialize Tauri with interactive mode disabled
+          echo "Initializing Tauri..."
           pnpm tauri init \
             --app-name "${{ env.TAURI_APP_NAME }}" \
             --window-title "${{ env.TAURI_APP_NAME }}" \
@@ -85,7 +113,27 @@ jobs:
             --dev-path "http://localhost:3000" \
             --yes
           
-          # Create basic package.json if it doesn't exist
+          # Add tauri as dev dependency
+          pnpm add -D @tauri-apps/cli @tauri-apps/api
+          
+          # Install dependencies to generate lock file
+          pnpm install
+          
+          echo "Tauri initialization completed successfully"
+
+      - name: Commit Tauri initialization
+        if: steps.check-commands.outputs.init_command == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git diff --staged --quiet || git commit -m "Initialize Tauri app"
+          git push
+
+      - name: Setup for build
+        if: steps.check-commands.outputs.build_command == 'true'
+        run: |
+          # Create package.json if it doesn't exist
           if [ ! -f "package.json" ]; then
             echo '{
               "name": "'${{ env.TAURI_APP_NAME }}'",
@@ -94,68 +142,49 @@ jobs:
               "scripts": {
                 "dev": "tauri dev",
                 "build": "tauri build"
-              }
+              },
+              "dependencies": {},
+              "devDependencies": {}
             }' > package.json
           fi
           
-          # Add tauri scripts to package.json if they don't exist
-          if [ -f "package.json" ]; then
-            npm pkg set scripts.tauri="tauri"
-            npm pkg set scripts.dev="tauri dev"
-            npm pkg set scripts.build="tauri build"
-          fi
-          
-          # Commit and push the changes
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add .
-          git commit -m "Initialize Tauri app"
-          git push
-
-      - name: Build Tauri for all platforms (for /build command)
-        if: steps.check-commands.outputs.build_command == 'true'
-        run: |
-          # Install dependencies and build
+          # Install dependencies and generate lock file
           pnpm install
           pnpm add -g @tauri-apps/cli
-          
-          # Install Rust and required targets
+          pnpm add -D @tauri-apps/cli @tauri-apps/api
+
+      - name: Setup Rust for build
+        if: steps.check-commands.outputs.build_command == 'true'
+        run: |
+          # Install Rust
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           source ~/.cargo/env
           
-          # Install required targets for cross-compilation
+          # Install required targets
           rustup target add x86_64-pc-windows-gnu
           rustup target add x86_64-apple-darwin
-          rustup target add aarch64-apple-darwin
           rustup target add x86_64-unknown-linux-gnu
-          
-          # For Android build
-          rustup target add aarch64-linux-android
-          rustup target add armv7-linux-androideabi
-          rustup target add i686-linux-android
-          rustup target add x86_64-linux-android
-          
-          # Create build matrix and build for each platform
-          # Note: Building for all platforms requires proper setup and might need separate runners
-          # This is a simplified version that will attempt to build for current platform
-          
+
+      - name: Build Tauri app
+        if: steps.check-commands.outputs.build_command == 'true'
+        run: |
+          source ~/.cargo/env
           echo "Building Tauri app..."
           pnpm tauri build
-          
-          # The actual multi-platform build would require:
-          # - macOS runner for macOS builds
-          # - Windows runner for Windows builds  
-          # - Special setup for Android builds
 
-      - name: Upload artifacts (for /build command)
+      - name: Upload build artifacts
         if: steps.check-commands.outputs.build_command == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-build-output
-          path: src-tauri/target/release/bundle/
+          name: tauri-build-${{ runner.os }}
+          path: |
+            src-tauri/target/release/bundle/
+            src-tauri/target/release/*.deb
+            src-tauri/target/release/*.AppImage
+            src-tauri/target/release/*.exe
           retention-days: 7
 
-      - name: Post comment response
+      - name: Post success comment
         if: steps.check-commands.outputs.init_command == 'true' || steps.check-commands.outputs.build_command == 'true'
         uses: actions/github-script@v7
         with:
@@ -165,9 +194,9 @@ jobs:
             
             let message = '';
             if ('${{ steps.check-commands.outputs.init_command }}' === 'true') {
-              message = '🚀 Tauri initialization completed! The Tauri app structure has been set up.';
+              message = '🚀 Tauri initialization completed! The Tauri app structure has been set up and committed to the repository.';
             } else if ('${{ steps.check-commands.outputs.build_command }}' === 'true') {
-              message = '🔨 Build completed! The Tauri app has been built. Check the artifacts for the output.';
+              message = '🔨 Build completed! The Tauri app has been built successfully. Check the artifacts for the output files.';
             }
             
             if (message) {
@@ -193,9 +222,9 @@ jobs:
               issue_number: issueNumber,
               body: '❌ No valid command found. Available commands: `/init`, `/build`'
             });
-      - name: commit to repo
+      - name: commit score
         uses: stefanzweifel/git-auto-commit-action@v6
         with:
-          commit_message: "TAURI"
+          commit_message: "Update code quality score"
           branch: main
-          commit_user_name: TAURI-BOT
+          commit_user_name: shit-code-score
