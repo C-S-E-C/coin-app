@@ -91,9 +91,7 @@ jobs:
           pnpm tauri init \
             --app-name "${{ env.TAURI_APP_NAME }}" \
             --window-title "${{ env.TAURI_APP_NAME }}" \
-            --dist-dir "../dist" \
             --dev-path "http://localhost:3000" \
-            --yes
           
           # Add tauri as dev dependency
           pnpm add -D @tauri-apps/cli @tauri-apps/api
