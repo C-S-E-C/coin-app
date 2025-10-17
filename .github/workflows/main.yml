@@ -81,7 +81,22 @@ jobs:
           mkdir -p src-tauri/assets
           
           echo "✅ Tauri initialization completed"
-
+      - name: Configure Tauri Bundle Identifier
+        if: steps.extract.outputs.contains_build == 'true'
+        run: |
+         echo "Configuring Tauri bundle identifier..."
+         UNIQUE_ID="com.${{ github.repository_owner }}.csec-coin-app"
+         if [ -f "src-tauri/tauri.conf.json" ]; then
+           jq --arg id "$UNIQUE_ID" '.tauri.bundle.identifier = $id' src-tauri/tauri.conf.json > temp.json && mv temp.json src-tauri/tauri.conf.json
+           echo "✅ Updated bundle identifier to: $UNIQUE_ID"
+         else
+           echo "❌ tauri.conf.json not found. Running tauri init first..."
+           npx tauri init
+           jq --arg id "$UNIQUE_ID" '.tauri.bundle.identifier = $id' src-tauri/tauri.conf.json > temp.json && mv temp.json src-tauri/tauri.conf.json
+           echo "✅ Created and updated bundle identifier to: $UNIQUE_ID"
+         fi
+         echo "Current bundle identifier:"
+         jq '.tauri.bundle.identifier' src-tauri/tauri.conf.json
       - name: Build for All Platforms (/build)
         if: steps.extract.outputs.contains_build == 'true'
         run: |
