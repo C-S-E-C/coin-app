@@ -192,7 +192,7 @@ jobs:
 
       - name: Commit score
         if: steps.check-commands.outputs.init_command == 'true' || steps.check-commands.outputs.build_command == 'true'
-        uses: stefanzwecript/git-auto-commit-action@v6
+        uses: stefanzweifel/git-auto-commit-action@v6
         with:
           commit_message: "Update code quality score"
           branch: main
