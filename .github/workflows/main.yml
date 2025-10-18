@@ -135,8 +135,8 @@ jobs:
             APP_ID="com.${{ github.repository_owner }}.${{ env.TAURI_APP_NAME }}"
             APP_ID=$(echo "$APP_ID" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:].')
             
-            # Create a properly structured tauri.conf.json
-            cat > src-tauri/tauri.conf.json << 'EOF'
+            # Create a properly structured tauri.conf.json using a template file
+            cat > /tmp/tauri_template.json << 'EOL'
 {
   "build": {
     "beforeBuildCommand": "",
@@ -160,7 +160,7 @@ jobs:
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "identifier": "$APP_ID",
+    "identifier": "APP_ID_PLACEHOLDER",
     "longDescription": "",
     "macOS": {
       "frameworks": [],
@@ -171,12 +171,12 @@ jobs:
     "shortDescription": "",
     "targets": "all"
   },
-  "productName": "${{ env.TAURI_APP_NAME }}",
+  "productName": "TAURI_APP_NAME_PLACEHOLDER",
   "mainWindow": {
     "fullscreen": false,
     "height": 600,
     "resizable": true,
-    "title": "${{ env.TAURI_APP_NAME }}",
+    "title": "TAURI_APP_NAME_PLACEHOLDER",
     "width": 800
   },
   "plugins": {
@@ -206,17 +206,22 @@ jobs:
         "fullscreen": false,
         "height": 600,
         "resizable": true,
-        "title": "${{ env.TAURI_APP_NAME }}",
+        "title": "TAURI_APP_NAME_PLACEHOLDER",
         "width": 800
       }
     ]
   }
 }
-EOF
+EOL
             
-            # Replace the placeholder with actual app ID
-            sed -i "s/\$APP_ID/$APP_ID/g" src-tauri/tauri.conf.json
+            # Replace placeholders with actual values
+            sed -e "s/APP_ID_PLACEHOLDER/$APP_ID/g" \
+                -e "s/TAURI_APP_NAME_PLACEHOLDER/${{ env.TAURI_APP_NAME }}/g" \
+                /tmp/tauri_template.json > src-tauri/tauri.conf.json
+            
             echo "Updated bundle identifier to: $APP_ID"
+            echo "Current tauri.conf.json:"
+            cat src-tauri/tauri.conf.json
           fi
           
           if [ -f "src-tauri/Cargo.toml" ]; then
@@ -234,10 +239,6 @@ EOF
             echo "Tauri not initialized. Please run /init first."
             exit 1
           fi
-          
-          # Validate the configuration file
-          echo "Validating tauri.conf.json..."
-          cat src-tauri/tauri.conf.json
           
           cd src-tauri
           cargo update
