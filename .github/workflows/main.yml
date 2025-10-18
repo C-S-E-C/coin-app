@@ -57,7 +57,7 @@ jobs:
         with:
           version: 8
 
-      - name: Setup Node.js without cache
+      - name: Setup Node.js
         if: steps.check-commands.outputs.init_command == 'true' || steps.check-commands.outputs.build_command == 'true'
         uses: actions/setup-node@v4
         with:
@@ -66,8 +66,6 @@ jobs:
       - name: Create basic package structure for init
         if: steps.check-commands.outputs.init_command == 'true'
         run: |
-          # Create package.json if it doesn't exist
-          # Create initial pnpm-lock.yaml if it doesn't exist
           if [ ! -f "pnpm-lock.yaml" ]; then
             echo "Creating initial pnpm-lock.yaml..."
             pnpm install --lockfile-only
@@ -77,49 +75,74 @@ jobs:
         if: steps.check-commands.outputs.init_command == 'true'
         run: |
           pnpm add -g @tauri-apps/cli
+          
           if [ -d "src-tauri" ]; then
             echo "Tauri is already initialized"
             echo "::warning::Tauri is already initialized in this repository"
             exit 0
           fi
-         echo "APP_ID=com.${{ github.repository_owner }}.${{ env.TAURI_APP_NAME }}" >> $GITHUB_ENV
-         APP_ID=$(echo "$APP_ID" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:].')
-         echo "Initializing Tauri with bundle identifier: $APP_ID"
-         pnpm tauri init \
-           --app-name "${{ env.TAURI_APP_NAME }}" \
-           --window-title "${{ env.TAURI_APP_NAME }}" \
-           --bundle-identifier "$APP_ID"
-         pnpm add -D @tauri-apps/cli@latest @tauri-apps/api@latest
-         pnpm add tauri-plugin-log@latest
-         pnpm install
-         echo "Tauri initialization completed successfully"
+          
+          # Generate unique bundle identifier
+          APP_ID="com.${{ github.repository_owner }}.${{ env.TAURI_APP_NAME }}"
+          APP_ID=$(echo "$APP_ID" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:].')
+          
+          echo "Initializing Tauri with bundle identifier: $APP_ID"
+          pnpm tauri init \
+            --app-name "${{ env.TAURI_APP_NAME }}" \
+            --window-title "${{ env.TAURI_APP_NAME }}" \
+            --bundle-identifier "$APP_ID"
+          
+          pnpm add -D @tauri-apps/cli@latest @tauri-apps/api@latest
+          pnpm add tauri-plugin-log@latest
+          pnpm install
+          
+          echo "Tauri initialization completed successfully"
 
-      - name: Commit Tauri initialization
-        if: steps.check-commands.outputs.init_command == 'true'
+      - name: Install system dependencies for build
+        if: steps.check-commands.outputs.build_command == 'true'
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add .
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Initialize Tauri app"
-            git push
-          fi
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.0-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            jq
 
       - name: Setup Rust for build
         if: steps.check-commands.outputs.build_command == 'true'
         run: |
-          # Install Rust
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           source ~/.cargo/env
           echo "Rust installed successfully"
           
-          # Install required targets
           rustup target add x86_64-pc-windows-gnu
           rustup target add x86_64-apple-darwin
           rustup target add x86_64-unknown-linux-gnu
           echo "Rust targets added"
+
+      - name: Fix Tauri Configuration
+        if: steps.check-commands.outputs.build_command == 'true'
+        run: |
+          if [ -f "src-tauri/tauri.conf.json" ]; then
+            echo "Fixing bundle identifier in tauri.conf.json"
+            APP_ID="com.${{ github.repository_owner }}.${{ env.TAURI_APP_NAME }}"
+            APP_ID=$(echo "$APP_ID" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:].')
+            
+            jq --arg app_id "$APP_ID" '.bundle.identifier = $app_id' src-tauri/tauri.conf.json > tmp.conf.json
+            mv tmp.conf.json src-tauri/tauri.conf.json
+            echo "Updated bundle identifier to: $APP_ID"
+          fi
+          
+          if [ -f "src-tauri/Cargo.toml" ]; then
+            echo "Ensuring proper version specifications in Cargo.toml"
+            sed -i 's/tauri-plugin-log = "2"/tauri-plugin-log = "2.0"/' src-tauri/Cargo.toml
+          fi
 
       - name: Build Tauri app
         if: steps.check-commands.outputs.build_command == 'true'
@@ -127,11 +150,14 @@ jobs:
           source ~/.cargo/env
           echo "Building Tauri app..."
           
-          # Check if Tauri is initialized
           if [ ! -d "src-tauri" ]; then
             echo "Tauri not initialized. Please run /init first."
             exit 1
           fi
+          
+          cd src-tauri
+          cargo update
+          cd ..
           
           pnpm tauri build
           echo "Build completed successfully"
@@ -185,8 +211,9 @@ jobs:
               repo: context.repo.repo,
               issue_number: issueNumber,
               body: '❌ No valid command found. Available commands: `/init`, `/build`'
-            });
-      - name: commit score
+            })
+
+      - name: Commit score
         uses: stefanzweifel/git-auto-commit-action@v6
         with:
           commit_message: "Update code quality score"
