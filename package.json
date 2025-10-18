@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "tauri": "tauri"
+    "build": "echo 'Building frontend...'",
   },
   "devDependencies": {
     "@tauri-apps/api": "^2.8.0",
