@@ -82,15 +82,10 @@ jobs:
             exit 0
           fi
           
-          # Generate unique bundle identifier
-          APP_ID="com.${{ github.repository_owner }}.${{ env.TAURI_APP_NAME }}"
-          APP_ID=$(echo "$APP_ID" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:].')
-          
-          echo "Initializing Tauri with bundle identifier: $APP_ID"
+          echo "Initializing Tauri..."
           pnpm tauri init \
             --app-name "${{ env.TAURI_APP_NAME }}" \
-            --window-title "${{ env.TAURI_APP_NAME }}" \
-            --bundle-identifier "$APP_ID"
+            --window-title "${{ env.TAURI_APP_NAME }}"
           
           pnpm add -D @tauri-apps/cli@latest @tauri-apps/api@latest
           pnpm add tauri-plugin-log@latest
@@ -112,7 +107,6 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            jq \
             patchelf
 
       - name: Setup Rust for build
@@ -126,50 +120,6 @@ jobs:
           rustup target add x86_64-apple-darwin
           rustup target add x86_64-unknown-linux-gnu
           echo "Rust targets added"
-
-      - name: Fix Tauri Configuration
-        if: steps.check-commands.outputs.build_command == 'true'
-        run: |
-          if [ -f "src-tauri/tauri.conf.json" ]; then
-            echo "Fixing tauri.conf.json structure..."
-            APP_ID="com.${{ github.repository_owner }}.${{ env.TAURI_APP_NAME }}"
-            APP_ID=$(echo "$APP_ID" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:].')
-            
-            # Create a simple Python script to fix the JSON
-            cat > fix_tauri_config.py << 'EOF'
-import json
-import sys
-
-# Read the current config
-with open('src-tauri/tauri.conf.json', 'r') as f:
-    config = json.load(f)
-
-# Ensure proper structure
-if 'bundle' not in config:
-    config['bundle'] = {}
-
-# Set the bundle identifier
-config['bundle']['identifier'] = sys.argv[1]
-
-# Write back the fixed config
-with open('src-tauri/tauri.conf.json', 'w') as f:
-    json.dump(config, f, indent=2)
-
-print("Fixed tauri.conf.json")
-EOF
-            
-            python3 fix_tauri_config.py "$APP_ID"
-            echo "Updated bundle identifier to: $APP_ID"
-            
-            # Print the fixed config for verification
-            echo "Current tauri.conf.json:"
-            cat src-tauri/tauri.conf.json
-          fi
-          
-          if [ -f "src-tauri/Cargo.toml" ]; then
-            echo "Ensuring proper version specifications in Cargo.toml"
-            sed -i 's/tauri-plugin-log = "2"/tauri-plugin-log = "2.0"/' src-tauri/Cargo.toml
-          fi
 
       - name: Build Tauri app
         if: steps.check-commands.outputs.build_command == 'true'
@@ -242,7 +192,7 @@ EOF
 
       - name: Commit score
         if: steps.check-commands.outputs.init_command == 'true' || steps.check-commands.outputs.build_command == 'true'
-        uses: stefanzweifel/git-auto-commit-action@v6
+        uses: stefanzwecript/git-auto-commit-action@v6
         with:
           commit_message: "Update code quality score"
           branch: main
