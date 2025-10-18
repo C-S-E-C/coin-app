@@ -135,91 +135,33 @@ jobs:
             APP_ID="com.${{ github.repository_owner }}.${{ env.TAURI_APP_NAME }}"
             APP_ID=$(echo "$APP_ID" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:].')
             
-            # Create a properly structured tauri.conf.json using a template file
-            cat > /tmp/tauri_template.json << 'EOL'
-{
-  "build": {
-    "beforeBuildCommand": "",
-    "beforeDevCommand": "",
-    "devPath": "../dist",
-    "distDir": "../dist",
-    "withGlobalTauri": false
-  },
-  "bundle": {
-    "active": true,
-    "category": "DeveloperTool",
-    "copyright": "",
-    "deb": {
-      "depends": []
-    },
-    "externalBin": [],
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ],
-    "identifier": "APP_ID_PLACEHOLDER",
-    "longDescription": "",
-    "macOS": {
-      "frameworks": [],
-      "exceptionDomain": "",
-      "signing": null
-    },
-    "resources": [],
-    "shortDescription": "",
-    "targets": "all"
-  },
-  "productName": "TAURI_APP_NAME_PLACEHOLDER",
-  "mainWindow": {
-    "fullscreen": false,
-    "height": 600,
-    "resizable": true,
-    "title": "TAURI_APP_NAME_PLACEHOLDER",
-    "width": 800
-  },
-  "plugins": {
-    "shell": {
-      "open": true
-    }
-  },
-  "tauri": {
-    "allowlist": {
-      "all": false,
-      "shell": {
-        "all": false,
-        "open": true
-      }
-    },
-    "bundle": {
-      "active": true
-    },
-    "security": {
-      "csp": null
-    },
-    "updater": {
-      "active": false
-    },
-    "windows": [
-      {
-        "fullscreen": false,
-        "height": 600,
-        "resizable": true,
-        "title": "TAURI_APP_NAME_PLACEHOLDER",
-        "width": 800
-      }
-    ]
-  }
-}
-EOL
+            # Create a simple Python script to fix the JSON
+            cat > fix_tauri_config.py << 'EOF'
+import json
+import sys
+
+# Read the current config
+with open('src-tauri/tauri.conf.json', 'r') as f:
+    config = json.load(f)
+
+# Ensure proper structure
+if 'bundle' not in config:
+    config['bundle'] = {}
+
+# Set the bundle identifier
+config['bundle']['identifier'] = sys.argv[1]
+
+# Write back the fixed config
+with open('src-tauri/tauri.conf.json', 'w') as f:
+    json.dump(config, f, indent=2)
+
+print("Fixed tauri.conf.json")
+EOF
             
-            # Replace placeholders with actual values
-            sed -e "s/APP_ID_PLACEHOLDER/$APP_ID/g" \
-                -e "s/TAURI_APP_NAME_PLACEHOLDER/${{ env.TAURI_APP_NAME }}/g" \
-                /tmp/tauri_template.json > src-tauri/tauri.conf.json
-            
+            python3 fix_tauri_config.py "$APP_ID"
             echo "Updated bundle identifier to: $APP_ID"
+            
+            # Print the fixed config for verification
             echo "Current tauri.conf.json:"
             cat src-tauri/tauri.conf.json
           fi
