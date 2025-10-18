@@ -82,7 +82,7 @@ jobs:
             echo "::warning::Tauri is already initialized in this repository"
             exit 0
           fi
-         APP_ID="com.${{ github.repository_owner }}.${{ env.TAURI_APP_NAME }}"
+         echo "APP_ID=com.${{ github.repository_owner }}.${{ env.TAURI_APP_NAME }}" >> $GITHUB_ENV
          APP_ID=$(echo "$APP_ID" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:].')
          echo "Initializing Tauri with bundle identifier: $APP_ID"
          pnpm tauri init \
