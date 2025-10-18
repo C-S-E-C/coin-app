@@ -103,7 +103,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libwebkit2gtk-4.0-dev \
+            libwebkit2gtk-4.1-dev \
             build-essential \
             curl \
             wget \
@@ -112,7 +112,8 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            jq
+            jq \
+            patchelf
 
       - name: Setup Rust for build
         if: steps.check-commands.outputs.build_command == 'true'
@@ -214,6 +215,7 @@ jobs:
             })
 
       - name: Commit score
+        if: steps.check-commands.outputs.init_command == 'true' || steps.check-commands.outputs.build_command == 'true'
         uses: stefanzweifel/git-auto-commit-action@v6
         with:
           commit_message: "Update code quality score"
