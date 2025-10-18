@@ -131,12 +131,91 @@ jobs:
         if: steps.check-commands.outputs.build_command == 'true'
         run: |
           if [ -f "src-tauri/tauri.conf.json" ]; then
-            echo "Fixing bundle identifier in tauri.conf.json"
+            echo "Fixing tauri.conf.json structure..."
             APP_ID="com.${{ github.repository_owner }}.${{ env.TAURI_APP_NAME }}"
             APP_ID=$(echo "$APP_ID" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:].')
             
-            jq --arg app_id "$APP_ID" '.bundle.identifier = $app_id' src-tauri/tauri.conf.json > tmp.conf.json
-            mv tmp.conf.json src-tauri/tauri.conf.json
+            # Create a properly structured tauri.conf.json
+            cat > src-tauri/tauri.conf.json << 'EOF'
+{
+  "build": {
+    "beforeBuildCommand": "",
+    "beforeDevCommand": "",
+    "devPath": "../dist",
+    "distDir": "../dist",
+    "withGlobalTauri": false
+  },
+  "bundle": {
+    "active": true,
+    "category": "DeveloperTool",
+    "copyright": "",
+    "deb": {
+      "depends": []
+    },
+    "externalBin": [],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "identifier": "$APP_ID",
+    "longDescription": "",
+    "macOS": {
+      "frameworks": [],
+      "exceptionDomain": "",
+      "signing": null
+    },
+    "resources": [],
+    "shortDescription": "",
+    "targets": "all"
+  },
+  "productName": "${{ env.TAURI_APP_NAME }}",
+  "mainWindow": {
+    "fullscreen": false,
+    "height": 600,
+    "resizable": true,
+    "title": "${{ env.TAURI_APP_NAME }}",
+    "width": 800
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "open": true
+      }
+    },
+    "bundle": {
+      "active": true
+    },
+    "security": {
+      "csp": null
+    },
+    "updater": {
+      "active": false
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "height": 600,
+        "resizable": true,
+        "title": "${{ env.TAURI_APP_NAME }}",
+        "width": 800
+      }
+    ]
+  }
+}
+EOF
+            
+            # Replace the placeholder with actual app ID
+            sed -i "s/\$APP_ID/$APP_ID/g" src-tauri/tauri.conf.json
             echo "Updated bundle identifier to: $APP_ID"
           fi
           
@@ -155,6 +234,10 @@ jobs:
             echo "Tauri not initialized. Please run /init first."
             exit 1
           fi
+          
+          # Validate the configuration file
+          echo "Validating tauri.conf.json..."
+          cat src-tauri/tauri.conf.json
           
           cd src-tauri
           cargo update
